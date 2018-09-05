@@ -22,11 +22,12 @@ class ApplicationStart @Inject()(lifecycle: ApplicationLifecycle, config:Configu
       lifecycle.stop()
     case Some(topicArn)=>
       logger.debug(s"topicArn is $topicArn")
+
       MessageHook.connect(topicArn).onComplete({
-        case Success(subscriptionArn)=>
-          logger.debug(s"Success, subscriptionArn is $subscriptionArn")
+        case Success(hook)=>
+          logger.debug(s"Success, subscriptionArn is ${hook.getSubscriptionArn}")
           lifecycle.addStopHook(()=> {
-            MessageHook.disconnect(subscriptionArn)
+            hook.disconnect
             Future.successful()
           })
 

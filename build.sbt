@@ -22,8 +22,17 @@ libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-s3" % amazonSdkVersion,
   "com.amazonaws" % "aws-java-sdk-dynamodb" % amazonSdkVersion,
   "com.amazonaws" % "aws-java-sdk-elastictranscoder" % amazonSdkVersion,
-  "com.amazonaws" % "aws-java-sdk-sns" % amazonSdkVersion
+  "com.amazonaws" % "aws-java-sdk-sns" % amazonSdkVersion,
+  "com.amazonaws" % "aws-java-sdk-sqs" % amazonSdkVersion
 )
+
+val circeVersion = "0.9.3"
+
+libraryDependencies ++= Seq(
+  "io.circe" %% "circe-core",
+  "io.circe" %% "circe-generic",
+  "io.circe" %% "circe-parser"
+).map(_ % circeVersion)
 
 enablePlugins(UniversalPlugin)
 
