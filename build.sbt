@@ -1,3 +1,6 @@
+import NativePackagerHelper._
+import RpmConstants._
+
 name := "transcodebuckets"
  
 version := "1.0" 
@@ -12,7 +15,7 @@ scalaVersion := "2.12.2"
 
 libraryDependencies ++= Seq( jdbc , ehcache , ws , specs2 % Test , guice )
 
-unmanagedResourceDirectories in Test <+=  baseDirectory ( _ /"target/web/public/test" )  
+unmanagedResourceDirectories in Test +=  (baseDirectory ( _ /"target/web/public/test" )).value
 
 val amazonSdkVersion = "1.11.401"
 libraryDependencies ++= Seq(
@@ -20,4 +23,40 @@ libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-dynamodb" % amazonSdkVersion,
   "com.amazonaws" % "aws-java-sdk-elastictranscoder" % amazonSdkVersion,
   "com.amazonaws" % "aws-java-sdk-sns" % amazonSdkVersion
+)
+
+enablePlugins(UniversalPlugin)
+
+enablePlugins(LinuxPlugin)
+
+enablePlugins(RpmPlugin, JavaServerAppPackaging, SystemdPlugin, DockerPlugin)
+
+//Generic Linux package build configuration
+mappings in Universal ++= directory("postrun/")
+
+packageSummary in Linux := "A system to manage, backup and archive multimedia project files"
+
+packageDescription in Linux := "A system to manage, backup and archive multimedia project files"
+
+//RPM build configuration
+rpmVendor := "Andy Gallagher <andy.gallagher@theguardian.com>"
+
+rpmUrl := Some("https://github/fredex42/projectlocker")
+
+rpmRequirements := Seq("libxml2", "gzip")
+
+serverLoading in Universal := Some(ServerLoader.Systemd)
+
+packageName in Rpm := "projectlocker"
+
+version in Rpm := "1.0"
+
+rpmRelease := sys.props.getOrElse("build.number","DEV")
+
+packageArchitecture := "noarch"
+
+rpmLicense := Some("custom")
+
+maintainerScripts in Rpm := Map(
+  Post -> Seq("cp -f /usr/share/projectlocker/conf/sudo-trapdoor /etc/sudoers.d/projectlocker")
 )
