@@ -4,19 +4,23 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.stream.ActorMaterializer
 import akka.util.ByteString
-import com.amazonaws.services.sns.{AmazonSNSAsyncClientBuilder, AmazonSNS, AmazonSNSClientBuilder}
+import com.amazonaws.services.sns.{AmazonSNS, AmazonSNSAsyncClientBuilder, AmazonSNSClientBuilder}
 import com.amazonaws.services.sns.model.SubscribeResult
 import com.amazonaws.services.sqs.{AmazonSQS, AmazonSQSClientBuilder}
 import com.amazonaws.services.sqs.model.CreateQueueResult
 import javax.inject.Inject
 import play.api.Logger
+import io.circe.generic.auto._
+import io.circe.syntax._
+import models.SNSMessage
 
 import scala.compat.java8.FutureConverters
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.Failure
+import scala.util.{Failure, Success}
 import scala.util.matching.Regex
 import collection.JavaConverters._
+import scala.reflect.ClassTag
 
 object MessageHook {
   val logger = Logger(getClass)
@@ -64,13 +68,13 @@ object MessageHook {
     * @return a Future containing the ARN of the completed subscription. Future will fail if there was an error, pick
     *         this up with .onComplete or .recover
     */
-  def connect(topicArn: String)(implicit actorSystem:ActorSystem, materializer: ActorMaterializer):Future[MessageHook] = {
+  def connect[T](topicArn: String, processor:MessageProcessor[T, Unit])(implicit actorSystem:ActorSystem, materializer: ActorMaterializer):Future[MessageHook[T]] = {
     implicit val sqsClient:com.amazonaws.services.sqs.AmazonSQS = AmazonSQSClientBuilder.standard().build()
     implicit val snsClient = AmazonSNSClientBuilder.defaultClient()
 
     createSqsQueue.flatMap(qData=>{
       subscribeSqsQueue(topicArn, qData).map(subscribeResult=>{
-        new MessageHook(Some(qData), Some(subscribeResult.getSubscriptionArn))
+        new MessageHook[T](Some(qData), Some(subscribeResult.getSubscriptionArn), Some(processor))
       })
     })
     /*    logger.debug(s"MessageHook::connect - $topicArn")
@@ -82,7 +86,7 @@ object MessageHook {
   }
 }
 
-class MessageHook (sqsQueue:Option[CreateQueueResult] = None, subscriptionArn:Option[String]=None)  {
+class MessageHook[T] (sqsQueue:Option[CreateQueueResult] = None, subscriptionArn:Option[String]=None, processor:Option[MessageProcessor[T, Unit]])  {
   val logger = Logger(getClass)
 
   def getSubscriptionArn = subscriptionArn
@@ -91,6 +95,42 @@ class MessageHook (sqsQueue:Option[CreateQueueResult] = None, subscriptionArn:Op
     sqsClient.deleteQueue(qData.getQueueUrl)
   }
 
+  protected def processMessageBody(str: String) = {
+    logger.debug(s"processMessageBody got $str")
+    io.circe.parser.parse(str) match {
+      case Left(errors)=>
+        Failure(new RuntimeException(s"Could not parse JSON: $errors"))
+      case Right(value)=> //it's valid JSON but not necessarily the right message
+        value.as[SNSMessage] match {
+          case Right(msg)=>
+            logger.debug(s"Got valid SNS message: $msg")
+            Success()
+          case Left(error)=>
+            logger.error(s"Received invalid message: $error")
+            Failure(new RuntimeException("Message parsed but was not formatted correctly"))
+        }
+
+    }
+  }
+
+  protected def run() = Future {
+    val sqsClient = AmazonSQSClientBuilder.defaultClient()
+
+    sqsQueue match {
+      case None=>
+        throw new RuntimeException("Cannot run message hook because there is no queue set up yet")
+      case Some(realqData)=>
+        while(true){
+          logger.debug("Waiting for messages...")
+          val messageResult = sqsClient.receiveMessage(realqData.getQueueUrl)
+          messageResult.getMessages.asScala.foreach(msg=>{
+            logger.debug(s"Received message: $msg")
+            processMessageBody(msg.getBody)
+          })
+        }
+    }
+
+  }
   /**
     * cancel the provided subscription and delete the SQS queue for marshalling
     */

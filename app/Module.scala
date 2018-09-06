@@ -1,7 +1,8 @@
-import com.google.inject.AbstractModule
+import com.google.inject.{AbstractModule, TypeLiteral}
 import java.time.Clock
 
-import services.ApplicationStart
+import models.{GlobalServerState, InjectableGlobalServerState, SNSMessage}
+import services.{ApplicationStart, MessageProcessor, SNSMessageProcessor}
 
 /**
  * This class is a Guice module that tells Guice how to bind several
@@ -16,7 +17,11 @@ import services.ApplicationStart
 class Module extends AbstractModule {
 
   override def configure() = {
+    bind(classOf[InjectableGlobalServerState]).to(classOf[GlobalServerState])
+    bind(new TypeLiteral[MessageProcessor[SNSMessage, Unit]]{}).to(classOf[SNSMessageProcessor])
+    bind(classOf[SNSMessageProcessor]).asEagerSingleton()
     bind(classOf[ApplicationStart]).asEagerSingleton()
+
     //    // Use the system clock as the default implementation of Clock
     //    bind(classOf[Clock]).toInstance(Clock.systemDefaultZone)
     //    // Ask Guice to create an instance of ApplicationTimer when the
