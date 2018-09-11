@@ -11,14 +11,14 @@ import scala.util.{Failure, Success}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
-object TranscoderSetup {
+trait TranscoderSetupT {
   val logger = Logger(getClass)
 
   /**
     * get an ETS client. Supplied in this way for easy mocking in tests.
     * @return
     */
-  private def getClient = AmazonElasticTranscoderClientBuilder.defaultClient()
+  protected def getClient = AmazonElasticTranscoderClientBuilder.defaultClient()
 
   /**
     * creates a pipeline
@@ -87,4 +87,8 @@ object TranscoderSetup {
     p.future.onComplete(tried=>sched.cancel())
     p
   }
+}
+
+object TranscoderSetup extends TranscoderSetupT {
+
 }

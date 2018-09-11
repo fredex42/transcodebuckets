@@ -36,7 +36,8 @@
   <logger name="services.MessageHook" level="DEBUG"/>
   <logger name="services.ApplicationStart" level="DEBUG"/>
   <logger name="controllers.TranscoderMessageController" level="DEBUG"/>
-
+  <logger name="helpers.TranscoderSetupT" level="DEBUG"/>
+  <logger name="helpers.TranscoderSetupSpec" level="DEBUG"/>
   <root level="WARN">
     <appender-ref ref="ASYNCFILE" />
     <appender-ref ref="ASYNCSTDOUT" />

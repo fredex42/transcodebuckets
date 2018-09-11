@@ -34,6 +34,8 @@ libraryDependencies ++= Seq(
   "io.circe" %% "circe-parser"
 ).map(_ % circeVersion)
 
+libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.5.16" % Test
+
 enablePlugins(UniversalPlugin)
 
 enablePlugins(LinuxPlugin)
