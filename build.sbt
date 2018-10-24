@@ -17,7 +17,6 @@ libraryDependencies ++= Seq( jdbc , ehcache , ws , specs2 % Test , guice )
 
 unmanagedResourceDirectories in Test +=  (baseDirectory ( _ /"target/web/public/test" )).value
 
-
 val amazonSdkVersion = "1.11.401"
 libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-s3" % amazonSdkVersion,
@@ -53,7 +52,7 @@ serverLoading in Debian := Some(ServerLoader.Systemd)
 serviceAutostart in Debian := false
 
 version in Debian := s"${version.value}-${sys.env.getOrElse("CIRCLE_BUILD_NUM","SNAPSHOT")}"
-name in Debian := "plasmadash"
+name in Debian := "transcodebuckets"
 
 maintainer := "Andy Gallagher <andy.gallagher@theguardian.com>"
 packageSummary := "Tool to ensure that holding pen media is proxies and re-attached"
@@ -63,9 +62,9 @@ packageDescription := """Tool to ensure that holding pen media is proxies and re
 riffRaffPackageType := (packageBin in Debian).value
 riffRaffUploadArtifactBucket := Option("riffraff-artifact")
 riffRaffUploadManifestBucket := Option("riffraff-builds")
-riffRaffManifestBranch := sys.env.getOrElse("CIRCLE_BRANCH","unknown")
-riffRaffManifestRevision := sys.env.getOrElse("CIRCLE_BUILD_NUM","SNAPSHOT")
-riffRaffManifestVcsUrl := sys.env.getOrElse("CIRCLE_BUILD_URL", "")
-riffRaffBuildIdentifier := sys.env.getOrElse("CIRCLE_BUILD_NUM", "SNAPSHOT")
+riffRaffManifestBranch := sys.env.getOrElse("BRANCH","unknown")
+riffRaffManifestRevision := sys.env.getOrElse("BUILD_NUMBER","SNAPSHOT")
+riffRaffManifestVcsUrl := sys.env.getOrElse("BUILD_URL", "")
+riffRaffBuildIdentifier := sys.env.getOrElse("BUILD_NUMBER", "SNAPSHOT")
 riffRaffPackageName := "transcodebuckets"
 riffRaffManifestProjectName := "multimedia:transcodebuckets"
