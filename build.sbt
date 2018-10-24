@@ -51,7 +51,7 @@ debianPackageDependencies := Seq("openjdk-8-jre-headless")
 serverLoading in Debian := Some(ServerLoader.Systemd)
 serviceAutostart in Debian := false
 
-version in Debian := s"${version.value}-${sys.env.getOrElse("CIRCLE_BUILD_NUM","SNAPSHOT")}"
+version in Debian := ""
 name in Debian := "transcodebuckets"
 
 maintainer := "Andy Gallagher <andy.gallagher@theguardian.com>"
