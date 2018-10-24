@@ -1,0 +1,263 @@
+Parameters:
+  InputBucket:
+    Type: String
+    Description: Name of the "holding pen" bucket that is being processed
+  ImageId:
+    Type: String
+    Description: AMI to use for the controller image
+  InstanceType:
+    Type: String
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+    Description: Node to allocate for the controller instance
+  KeyPairId:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Keypair for the controller instance
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet to launch the controller instance into
+  SshCidr:
+    Type: String
+    Description: CIDR range to be given ssh access to the controller instance
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy the controller instance into. Must agree with SubnetId.
+  Stack:
+    Type: String
+    Default: Multimedia
+  App:
+    Type: String
+    Default: transcodebuckets
+  Stage:
+    Type: String
+    AllowedValues:
+      - PROD
+      - CODE
+    Default: CODE
+
+Resources:
+  NotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Transcoding Notifications
+
+  OutputBucket:
+    Type: AWS::S3::Bucket
+
+  ControllerInstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Ports for transcoding controller instance
+      SecurityGroupIngress:
+        CidrIp: !Ref SshCidr
+        FromPort: 22
+        ToPort: 22
+        IpProtocol: tcp
+      VpcId: !Ref VpcId
+
+  ControllerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ControllerInstanceRole
+
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: sourceUrl
+          AttributeType: S
+        - AttributeName: dummyHash
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: jobId
+          AttributeType: S
+      GlobalSecondaryIndexes:
+        - IndexName: statusIndex
+          KeySchema:
+            - AttributeName: dummyHash
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          ProvisionedThroughput:
+            ReadCapacityUnits: 10
+            WriteCapacityUnits: 10
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+            - jobId
+            - lastError
+        - IndexName: sourceUrlIndex
+          KeySchema:
+            - AttributeName: dummyHash
+              KeyType: HASH
+            - AttributeName: sourceUrl
+              KeyType: RANGE
+          ProvisionedThroughput:
+            ReadCapacityUnits: 10
+            WriteCapacityUnits: 10
+          Projection:
+            ProjectionType: ALL
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 1
+      Tags:
+      - Key: App
+        Value: !Ref App
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Stage
+        Value: !Ref Stage
+
+  ControllerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref ControllerInstanceProfile
+      ImageId: !Ref ImageId
+      KeyName: !Ref KeyPairId
+      SecurityGroupIds:
+        - !Ref ControllerInstanceSG
+      SubnetId: !Ref SubnetId
+      Tags:
+        - Key: App
+          Value: !Ref App
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Stage
+          Value: !Ref Stage
+      UserData: !Base64
+        "Fn::Sub": |
+          #!/bin/bash -e
+
+          sudo apt-get update && sudo apt-get upgrade
+
+          sudo cat > /etc/transcodebuckets.yaml << EOF
+          region: ${AWS::Region}
+          transcoderpipeline:
+            role: ${PipelineRole}
+            notifications: ${NotificationsTopic}
+            input: ${InputBucket}
+            output: ${OutputBucket}
+          tags:
+            app: ${App}
+            stack: ${Stack}
+            stage: ${Stage}
+          EOF
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - elastictranscoder.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: '/'
+
+  ControllerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: '/'
+
+  ControllerInstancePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: transcodebuckets-policy
+      Roles:
+      - Ref: ControllerInstanceRole
+      PolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - "*"
+            Resource:
+              - !Sub arn:aws:elastictranscoder:${AWS::Region}:${AWS::AccountId}:pipeline/transcodebuckets-*
+          - Effect: Allow
+            Action:
+              - "*"
+            Resource:
+              - !Ref NotificationsTopic
+          - Effect: Allow
+            Action:
+              - "*"
+            Resource:
+              - !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:transcodebuckets-*"
+          - Effect: Allow
+            Action:
+              - "*"
+            Resource:
+              - !GetAtt StateTable.Arn
+
+  PipelinePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: pipeline-policy
+      Roles:
+      - Ref: PipelineRole
+      - Ref: ControllerInstanceRole
+      PolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Sid: '1'
+          Effect: Allow
+          Action:
+          - s3:ListBucket
+          - s3:Get*
+          Resource:
+          - !Sub arn:aws:s3:::${InputBucket}
+          - !Sub arn:aws:s3:::${InputBucket}/*
+        - Sid: '1a'
+          Effect: Allow
+          Action:
+          - s3:Put*
+          - s3:ListBucket
+          - s3:*MultipartUpload*
+          - s3:Get*
+          Resource:
+          - !Sub arn:aws:s3:::${OutputBucket}
+          - !Sub arn:aws:s3:::${OutputBucket}/*
+        - Sid: '2'
+          Effect: Allow
+          Action: sns:Publish
+          Resource:
+          - !Ref NotificationsTopic
+        - Sid: '3'
+          Effect: Deny
+          Action:
+          - s3:*Delete*
+          - s3:*Policy*
+          - sns:*Remove*
+          - sns:*Delete*
+          - sns:*Permission*
+          Resource: "*"
+
+Outputs:
+  TranscoderPipelineRole:
+    Value: !Ref PipelineRole
+    Description: Role to use when setting up the transcoder pipeline
+  NotificationsTopicArn:
+    Value: !Ref NotificationsTopic
+    Description: Topic to use when setting up the transcoder pipeline
+  OutputBucket:
+    Value: !Ref OutputBucket
+    Description: Destination bucket to use when setting up the transcoder pipeline
