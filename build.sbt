@@ -17,6 +17,7 @@ libraryDependencies ++= Seq( jdbc , ehcache , ws , specs2 % Test , guice )
 
 unmanagedResourceDirectories in Test +=  (baseDirectory ( _ /"target/web/public/test" )).value
 
+
 val amazonSdkVersion = "1.11.401"
 libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-s3" % amazonSdkVersion,
