@@ -12,11 +12,14 @@ Parameters:
       - t2.micro
       - t2.small
     Description: Node to allocate for the controller instance
+  OfficeIpRange:
+    Type: String
+    Description: CIDR block of ip addresses to be allowed SSH access
   KeyPairId:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Keypair for the controller instance
-  SubnetId:
-    Type: AWS::EC2::Subnet::Id
+  DeploySubnets:
+    Type: List<AWS::EC2::Subnet::Id>
     Description: Subnet to launch the controller instance into
   SshCidr:
     Type: String
@@ -51,9 +54,13 @@ Resources:
     Properties:
       GroupDescription: Ports for transcoding controller instance
       SecurityGroupIngress:
-        CidrIp: !Ref SshCidr
+      - CidrIp: !Ref SshCidr
         FromPort: 22
         ToPort: 22
+        IpProtocol: tcp
+      - SourceSecurityGroupId: !GetAtt LoadBalancerSG.GroupId
+        FromPort: 9000
+        ToPort: 9000
         IpProtocol: tcp
       VpcId: !Ref VpcId
 
@@ -115,27 +122,81 @@ Resources:
       - Key: Stage
         Value: !Ref Stage
 
-  ControllerInstance:
-    Type: AWS::EC2::Instance
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Load-balancer security group for launchdetector
+      SecurityGroupIngress:
+        - CidrIp: !Ref OfficeIpRange
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+      VpcId: !Ref VpcId
+
+  ControllerLB:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      CrossZone: true
+      HealthCheck:
+        HealthyThreshold: "3"
+        Interval: "10"
+        Target: "TCP:9000"
+        Timeout: "3"
+        UnhealthyThreshold: "2"
+      Listeners:
+        - InstancePort: "9000"
+          InstanceProtocol: "http"
+          LoadBalancerPort: "80"
+          Protocol: "http"
+          #SSLCertificateId: !Ref LoadBalancerCert
+      Scheme: internal
+      SecurityGroups:
+      - !GetAtt LoadBalancerSG.GroupId
+      Subnets: !Ref DeploySubnets
+      Tags:
+      - Key: App
+        Value: !Ref App
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Stage
+        Value: !Ref Stage
+  ControllerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: "1"
+      HealthCheckType: ELB
+      LaunchConfigurationName: !Ref ControllerLC
+      LoadBalancerNames:
+      - !Ref ControllerLB
+      MaxSize: "4"
+      MinSize: "1"
+      VPCZoneIdentifier: !Ref DeploySubnets
+      HealthCheckGracePeriod: "300"
+      Tags:
+        - Key: App
+          Value: !Ref App
+          PropagateAtLaunch: true
+        - Key: Stack
+          Value: !Ref Stack
+          PropagateAtLaunch: true
+        - Key: Stage
+          Value: !Ref Stage
+          PropagateAtLaunch: true
+
+  ControllerLC:
+    Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       IamInstanceProfile: !Ref ControllerInstanceProfile
       ImageId: !Ref ImageId
       KeyName: !Ref KeyPairId
-      SecurityGroupIds:
-        - !Ref ControllerInstanceSG
-      SubnetId: !Ref SubnetId
-      Tags:
-        - Key: App
-          Value: !Ref App
-        - Key: Stack
-          Value: !Ref Stack
-        - Key: Stage
-          Value: !Ref Stage
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+      - !GetAtt ControllerInstanceSG.GroupId
       UserData: !Base64
         "Fn::Sub": |
           #!/bin/bash -e
 
-          sudo apt-get update && sudo apt-get upgrade
+          sudo apt-get -y update && sudo apt-get -y upgrade
 
           sudo cat > /etc/transcodebuckets.yaml << EOF
           region: ${AWS::Region}
@@ -149,6 +210,27 @@ Resources:
             stack: ${Stack}
             stage: ${Stage}
           EOF
+
+          cd /tmp
+          aws s3 cp s3://gnm-multimedia-rr-deployables/multimedia/CODE/transcodebuckets/transcodebuckets_1.0_all.deb .
+          dpkg -i transcodebuckets_1.0_all.deb
+
+          mkdir -p /var/run/transcodebuckets
+          chown transcodebuckets  /var/run/transcodebuckets
+
+          MEMTOTAL=$(cat /proc/meminfo  | grep MemTotal | awk '{print $2}')
+          echo Got total system memory of $MEMTOTAL
+
+          APP_HEAP=$(( $MEMTOTAL * 4/5 ))
+          echo Setting heap limit to $APP_HEAP
+
+          cat << EOF  > /etc/default/transcodebuckets
+          JAVA_OPTS="-Dpidfile.path=/var/run/transcodebuckets/app.pid -Xmx${APP_HEAP}m"
+          PIDFILE="/var/run/transcodebuckets/app.pid"
+          EOF
+
+          systemctl enable transcodebuckets
+          systemctl start transcodebuckets
 
   PipelineRole:
     Type: AWS::IAM::Role
@@ -207,6 +289,13 @@ Resources:
               - "*"
             Resource:
               - !GetAtt StateTable.Arn
+          - Effect: Allow
+            Action:
+              - s3:HeadObject
+              - s3:Get*
+              - s3:ListBucket
+            Resource:
+              - arn:aws:s3:::gnm-multimedia-rr-deployables/*
 
   PipelinePolicy:
     Type: AWS::IAM::Policy
