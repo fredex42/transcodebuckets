@@ -6,6 +6,7 @@ import com.amazonaws.services.s3._
 import com.amazonaws.services.s3.model.{ListObjectsV2Request, S3ObjectSummary}
 import helpers.DataAccess
 import javax.inject.{Inject, Singleton}
+import models.S3Location
 import play.api.Logger
 
 import scala.collection.JavaConverters._
@@ -13,6 +14,10 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success}
 import scala.concurrent.ExecutionContext.Implicits.global
 
+/**
+  * Class that encapsulates functionality for scanning an S3 bucket
+  * @param dataAccess - injected [[helpers.DataAccess]] object that allows access to the database
+  */
 @Singleton
 class BucketScanner @Inject() (dataAccess:DataAccess) {
   private val logger = Logger(getClass)
@@ -39,6 +44,27 @@ class BucketScanner @Inject() (dataAccess:DataAccess) {
       case Failure(err)=>
         logger.error("Processing S3 files failed: ", err)
     })
+  }
+
+  /**
+    * simple bucket scanning, returns the requested keys in the form of a sequence of [[models.S3Location]]
+    * @param bucketName bucket name to scan
+    * @param pageSize maximum number of results to return
+    * @param continuationToken optional continuation token that tells S3 where to restart from
+    * @param s3Client implicitly provided S3 client object
+    * @return
+    */
+  def simpleScanBucket(bucketName:String, pageSize: Int, continuationToken: Option[String])(implicit s3Client:AmazonS3):Seq[S3Location] = {
+    val rq = continuationToken match {
+      case Some(token)=>
+        new ListObjectsV2Request().withBucketName(bucketName).withMaxKeys(pageSize).withContinuationToken(token)
+      case None=>
+        new ListObjectsV2Request().withBucketName(bucketName).withMaxKeys(pageSize)
+    }
+
+    val result = s3Client.listObjectsV2(rq)
+
+    result.getObjectSummaries.asScala.map(summ=>S3Location(bucketName, summ.getKey,  Option(result.getContinuationToken))).toSeq
   }
 
   def processS3Item(item: S3ObjectSummary)(implicit ddbClient:AmazonDynamoDB):Future[Unit] = {

@@ -221,11 +221,12 @@ Resources:
           MEMTOTAL=$(cat /proc/meminfo  | grep MemTotal | awk '{print $2}')
           echo Got total system memory of $MEMTOTAL
 
+          #Set heap limit to 80% of system RAM
           APP_HEAP=$(( $MEMTOTAL * 4/5 ))
           echo Setting heap limit to $APP_HEAP
 
           cat << EOF  > /etc/default/transcodebuckets
-          JAVA_OPTS="-Dpidfile.path=/var/run/transcodebuckets/app.pid -Xmx${APP_HEAP}m"
+          JAVA_OPTS="-Dpidfile.path=/var/run/transcodebuckets/app.pid -Xmx${!APP_HEAP}m"
           PIDFILE="/var/run/transcodebuckets/app.pid"
           EOF
 
