@@ -38,6 +38,8 @@
   <logger name="controllers.TranscoderMessageController" level="DEBUG"/>
   <logger name="helpers.TranscoderSetupT" level="DEBUG"/>
   <logger name="helpers.TranscoderSetupSpec" level="DEBUG"/>
+  <logger name="services.ListBucketSource" level="DEBUG"/>
+
   <root level="WARN">
     <appender-ref ref="ASYNCFILE" />
     <appender-ref ref="ASYNCSTDOUT" />

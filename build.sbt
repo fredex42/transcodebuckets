@@ -35,6 +35,7 @@ libraryDependencies ++= Seq(
 ).map(_ % circeVersion)
 
 libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.5.16" % Test
+libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.17" % Test
 
 libraryDependencies ++= Seq(
   "com.gu" %% "scanamo" % "1.0.0-M6"

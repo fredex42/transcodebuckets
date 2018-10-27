@@ -2,11 +2,12 @@ package services
 
 import akka.stream.{Attributes, Outlet, SourceShape}
 import akka.stream.stage.{AbstractOutHandler, GraphStage, GraphStageLogic}
+import com.amazonaws.services.s3.AmazonS3
 import javax.inject.Inject
 import models.S3Location
 import play.api.Logger
 
-class ListBucketSource (bucketScanner: BucketScanner, bucketName:String) extends GraphStage[SourceShape[S3Location]]{
+class ListBucketSource (bucketScanner: BucketScanner, bucketName:String)(implicit s3Client:AmazonS3) extends GraphStage[SourceShape[S3Location]]{
   private val logger = Logger(getClass)
   final val out:Outlet[S3Location] = Outlet.create("ListBucketSource.out")
   private final val sShape = SourceShape.of(out)
@@ -19,9 +20,11 @@ class ListBucketSource (bucketScanner: BucketScanner, bucketName:String) extends
       override def onPull(): Unit = {
         bucketScanner.simpleScanBucket(bucketName,1, continuationToken).headOption match {
           case Some(location)=>
+            logger.info(s"Got location $location")
             continuationToken = location.continuationToken
             push(out, location)
           case None=>
+            complete(out)
             logger.warn(s"No more results returned from $bucketName")
         }
       }
